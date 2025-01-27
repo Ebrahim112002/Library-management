@@ -4,3 +4,4 @@
 4,English,Haisam
 5,boi,Tithi
 6,Bangla,Ebrahim
+7,ICT,Ayaan
