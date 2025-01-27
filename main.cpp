@@ -27,7 +27,6 @@ int getNextID() {
     return lastID + 1;
 }
 
-// Validate author name to ensure it's not numeric
 bool isValidName(const string &name) {
     for (char c : name) {
         if (isdigit(c)) {
@@ -37,7 +36,6 @@ bool isValidName(const string &name) {
     return !name.empty();
 }
 
-// Add a new book to the library
 void addBook() {
     ofstream file(FILE_NAME, ios::app);
     if (!file) {
@@ -68,7 +66,6 @@ void addBook() {
     cout << "Book added successfully with ID " << id << "!\n";
 }
 
-// View all books in the library
 void viewBooks() {
     ifstream file(FILE_NAME);
     if (!file) {
@@ -90,7 +87,6 @@ void viewBooks() {
     }
 }
 
-// Delete a book by ID
 void deleteBook() {
     int idToDelete;
     cout << "Enter book ID to delete: ";
@@ -127,7 +123,6 @@ void deleteBook() {
     }
 }
 
-// Search for books by title or author
 void searchBooks() {
     string searchTerm;
     cout << "Enter book title or author to search: ";
@@ -155,7 +150,6 @@ void searchBooks() {
     }
 }
 
-// Update book details by ID
 void updateBook() {
     int idToUpdate;
     cout << "Enter book ID to update: ";
@@ -175,7 +169,30 @@ void updateBook() {
         int id = stoi(line.substr(0, line.find(',')));
         if (id == idToUpdate) {
             found = true;
+
             string newTitle, newAuthor;
+            int newID = id;
+
+            cout << "Enter new ID (leave as 0 to keep current): ";
+            cin >> newID;
+            if (newID != 0) {
+                ifstream checkFile(FILE_NAME);
+                string checkLine;
+                bool idExists = false;
+                while (getline(checkFile, checkLine)) {
+                    int existingID = stoi(checkLine.substr(0, checkLine.find(',')));
+                    if (existingID == newID) {
+                        idExists = true;
+                        break;
+                    }
+                }
+                checkFile.close();
+
+                if (idExists) {
+                    cout << "Error: ID " << newID << " already exists. Keeping current ID.\n";
+                    newID = id;
+                }
+            }
 
             cout << "Enter new title (leave empty to keep current): ";
             cin.ignore();
@@ -192,6 +209,9 @@ void updateBook() {
             size_t firstComma = line.find(',');
             size_t secondComma = line.find(',', firstComma + 1);
 
+            if (newID != id) {
+                line.replace(0, firstComma, to_string(newID));
+            }
             if (!newTitle.empty()) {
                 line.replace(firstComma + 1, secondComma - firstComma - 1, newTitle);
             }
