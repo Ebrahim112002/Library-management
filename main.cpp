@@ -1,277 +1,282 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-const string FILE_NAME = "library.txt";
+const string BOOKS_FILE = "books.dat";
+const string USERS_FILE = "users.dat";
 
-void initializeFile() {
-    ifstream file(FILE_NAME);
-    if (!file) {
-        ofstream newFile(FILE_NAME);
-        if (!newFile) {
-            cerr << "Error initializing library file.\n";
-            exit(1);
-        }
-    }
+struct Book {
+    int id;
+    string title;
+    string author;
+    bool isBorrowed;
+
+    Book() : isBorrowed(false) {}
+};
+
+struct User {
+    int id;
+    string username;
+    string password;
+    string role;
+
+    User() {}
+    User(int uid, string uname, string pass, string r) : id(uid), username(uname), password(pass), role(r) {}
+};
+
+// Store users in an unordered map for fast lookup
+unordered_map<string, User> userMap;
+User* loggedInUser = nullptr;
+User* loggedInAdmin = nullptr;
+vector<Book> books;
+
+void initializeFiles() {
+    ofstream bookFile(BOOKS_FILE, ios::app | ios::binary);
+    ofstream userFile(USERS_FILE, ios::app | ios::binary);
 }
 
-int getNextID() {
-    ifstream file(FILE_NAME);
-    string line;
-    int lastID = 0;
+// Save users to file
+void saveUsers() {
+    ofstream file(USERS_FILE, ios::binary);
+    for (const auto& [username, user] : userMap) {
+        int id = user.id;
+        int nameLen = username.size();
+        int passLen = user.password.size();
+        int roleLen = user.role.size();
 
-    while (getline(file, line)) {
-        int id = stoi(line.substr(0, line.find(',')));
-        lastID = max(lastID, id);
+        file.write(reinterpret_cast<char*>(&id), sizeof(id));
+        file.write(reinterpret_cast<char*>(&nameLen), sizeof(nameLen));
+        file.write(username.c_str(), nameLen);
+        file.write(reinterpret_cast<char*>(&passLen), sizeof(passLen));
+        file.write(user.password.c_str(), passLen);
+        file.write(reinterpret_cast<char*>(&roleLen), sizeof(roleLen));
+        file.write(user.role.c_str(), roleLen);
     }
-
-    return lastID + 1;
+    file.close();
 }
 
-bool isValidName(const string &name) {
-    for (char c : name) {
-        if (isdigit(c)) {
-            return false;
-        }
+// Load users into memory once
+void loadUsers() {
+    userMap.clear();
+    ifstream file(USERS_FILE, ios::binary);
+    if (!file) return;
+
+    while (!file.eof()) {
+        int id, nameLen, passLen, roleLen;
+        if (!file.read(reinterpret_cast<char*>(&id), sizeof(id))) break;
+
+        file.read(reinterpret_cast<char*>(&nameLen), sizeof(nameLen));
+        string username(nameLen, '\0');
+        file.read(&username[0], nameLen);
+
+        file.read(reinterpret_cast<char*>(&passLen), sizeof(passLen));
+        string password(passLen, '\0');
+        file.read(&password[0], passLen);
+
+        file.read(reinterpret_cast<char*>(&roleLen), sizeof(roleLen));
+        string role(roleLen, '\0');
+        file.read(&role[0], roleLen);
+
+        userMap[username] = User(id, username, password, role);
     }
-    return !name.empty();
+    file.close();
 }
 
-void addBook() {
-    ofstream file(FILE_NAME, ios::app);
-    if (!file) {
-        cerr << "Error opening library file.\n";
-        return;
+// Save books to file
+void saveBooks() {
+    ofstream file(BOOKS_FILE, ios::binary);
+    for (const auto& book : books) {
+        int titleLen = book.title.size();
+        int authorLen = book.author.size();
+
+        file.write(reinterpret_cast<const char*>(&book.id), sizeof(book.id));
+        file.write(reinterpret_cast<const char*>(&titleLen), sizeof(titleLen));
+        file.write(book.title.c_str(), titleLen);
+        file.write(reinterpret_cast<const char*>(&authorLen), sizeof(authorLen));
+        file.write(book.author.c_str(), authorLen);
+        file.write(reinterpret_cast<const char*>(&book.isBorrowed), sizeof(book.isBorrowed));
     }
-
-    int id = getNextID();
-    string title, author;
-
-    cout << "Enter book title: ";
-    cin.ignore();
-    getline(cin, title);
-    if (title.empty()) {
-        cout << "Error: Book title cannot be empty.\n";
-        return;
-    }
-
-    do {
-        cout << "Enter book author: ";
-        getline(cin, author);
-        if (!isValidName(author)) {
-            cout << "Invalid name. Please enter a valid author name.\n";
-        }
-    } while (!isValidName(author));
-
-    file << id << "," << title << "," << author << endl;
-    cout << "Book added successfully with ID " << id << "!\n";
+    file.close();
 }
 
+// Load books from file once
+void loadBooks() {
+    books.clear();
+    ifstream file(BOOKS_FILE, ios::binary);
+    if (!file) return;
+
+    while (!file.eof()) {
+        Book book;
+        int titleLen, authorLen;
+        if (!file.read(reinterpret_cast<char*>(&book.id), sizeof(book.id))) break;
+
+        file.read(reinterpret_cast<char*>(&titleLen), sizeof(titleLen));
+        book.title.resize(titleLen);
+        file.read(&book.title[0], titleLen);
+
+        file.read(reinterpret_cast<char*>(&authorLen), sizeof(authorLen));
+        book.author.resize(authorLen);
+        file.read(&book.author[0], authorLen);
+
+        file.read(reinterpret_cast<char*>(&book.isBorrowed), sizeof(book.isBorrowed));
+        books.push_back(book);
+    }
+    file.close();
+}
+
+// Register a new user
+void registerUser(string role) {
+    User user;
+    cout << "Enter username: ";
+    cin >> user.username;
+    cout << "Enter password: ";
+    cin >> user.password;
+    user.role = role;
+    user.id = userMap.size() + 1;
+
+    userMap[user.username] = user;
+    saveUsers();
+    cout << role << " registered successfully!\n";
+}
+
+// Login user
+bool login(User*& loggedIn, string role) {
+    loadUsers();
+    string username, password;
+    cout << "Enter username: ";
+    cin >> username;
+    cout << "Enter password: ";
+    cin >> password;
+
+    if (userMap.count(username) && userMap[username].password == password && userMap[username].role == role) {
+        loggedIn = &userMap[username];
+        cout << role << " login successful!\n";
+        return true;
+    }
+    cout << "Invalid credentials or incorrect role!\n";
+    return false;
+}
+
+// View books
 void viewBooks() {
-    ifstream file(FILE_NAME);
-    if (!file) {
-        cerr << "Error opening library file.\n";
+    loadBooks();
+    if (books.empty()) {
+        cout << "No books found!\n";
         return;
     }
-
-    string line;
-    bool isEmpty = true;
-
-    cout << "\nBooks in the Library:\n";
-    while (getline(file, line)) {
-        cout << line << endl;
-        isEmpty = false;
-    }
-
-    if (isEmpty) {
-        cout << "No books found in the library.\n";
+    for (const auto& book : books) {
+        cout << "ID: " << book.id << " | Title: " << book.title << " | Author: " << book.author
+             << " | " << (book.isBorrowed ? "Borrowed" : "Available") << "\n";
     }
 }
 
-void deleteBook() {
-    int idToDelete;
-    cout << "Enter book ID to delete: ";
-    cin >> idToDelete;
-
-    ifstream file(FILE_NAME);
-    ofstream tempFile("temp.txt");
-    if (!file || !tempFile) {
-        cerr << "Error opening files.\n";
+// Add book (Admin only)
+void addBook() {
+    if (!loggedInAdmin) {
+        cout << "Admin must be logged in to add books!\n";
         return;
     }
 
-    string line;
-    bool found = false;
-
-    while (getline(file, line)) {
-        int id = stoi(line.substr(0, line.find(',')));
-        if (id != idToDelete) {
-            tempFile << line << endl;
-        } else {
-            found = true;
-        }
-    }
-
-    file.close();
-    tempFile.close();
-
-    if (found) {
-        remove(FILE_NAME.c_str());
-        rename("temp.txt", FILE_NAME.c_str());
-        cout << "Book with ID " << idToDelete << " deleted successfully.\n";
-    } else {
-        cout << "No book found with ID " << idToDelete << ".\n";
-    }
-}
-
-void searchBooks() {
-    string searchTerm;
-    cout << "Enter book title or author to search: ";
+    Book book;
+    cout << "Enter Book ID: ";
+    cin >> book.id;
     cin.ignore();
-    getline(cin, searchTerm);
+    cout << "Enter Title: ";
+    getline(cin, book.title);
+    cout << "Enter Author: ";
+    getline(cin, book.author);
+    book.isBorrowed = false;
 
-    ifstream file(FILE_NAME);
-    if (!file) {
-        cerr << "Error opening library file.\n";
-        return;
-    }
-
-    string line;
-    bool found = false;
-
-    while (getline(file, line)) {
-        if (line.find(searchTerm) != string::npos) {
-            cout << "Book found: " << line << endl;
-            found = true;
-        }
-    }
-
-    if (!found) {
-        cout << "No books found matching that search term!\n";
-    }
+    books.push_back(book);
+    saveBooks();
+    cout << "Book added successfully!\n";
 }
 
-void updateBook() {
-    int idToUpdate;
-    cout << "Enter book ID to update: ";
-    cin >> idToUpdate;
-
-    ifstream file(FILE_NAME);
-    ofstream tempFile("temp.txt");
-    if (!file || !tempFile) {
-        cerr << "Error opening files.\n";
+// Borrow book
+void borrowBook() {
+    if (!loggedInUser) {
+        cout << "You must be logged in to borrow a book!\n";
         return;
     }
 
-    string line;
-    bool found = false;
+    int bookID;
+    cout << "Enter book ID to borrow: ";
+    cin >> bookID;
 
-    while (getline(file, line)) {
-        int id = stoi(line.substr(0, line.find(',')));
-        if (id == idToUpdate) {
-            found = true;
+    for (auto& book : books) {
+        if (book.id == bookID && !book.isBorrowed) {
+            book.isBorrowed = true;
+            saveBooks();
+            cout << "Book borrowed successfully!\n";
+            return;
+        }
+    }
+    cout << "Book not found or already borrowed!\n";
+}
 
-            string newTitle, newAuthor;
-            int newID = id;
+// Return book
+void returnBook() {
+    if (!loggedInUser) {
+        cout << "You must be logged in to return a book!\n";
+        return;
+    }
 
-            cout << "Enter new ID (leave as 0 to keep current): ";
-            cin >> newID;
-            if (newID != 0) {
-                ifstream checkFile(FILE_NAME);
-                string checkLine;
-                bool idExists = false;
-                while (getline(checkFile, checkLine)) {
-                    int existingID = stoi(checkLine.substr(0, checkLine.find(',')));
-                    if (existingID == newID) {
-                        idExists = true;
-                        break;
-                    }
-                }
-                checkFile.close();
+    int bookID;
+    cout << "Enter book ID to return: ";
+    cin >> bookID;
 
-                if (idExists) {
-                    cout << "Error: ID " << newID << " already exists. Keeping current ID.\n";
-                    newID = id;
-                }
-            }
+    for (auto& book : books) {
+        if (book.id == bookID && book.isBorrowed) {
+            book.isBorrowed = false;
+            saveBooks();
+            cout << "Book returned successfully!\n";
+            return;
+        }
+    }
+    cout << "Book not found or not borrowed!\n";
+}
 
-            cout << "Enter new title (leave empty to keep current): ";
-            cin.ignore();
-            getline(cin, newTitle);
+void adminPanel() {
+    int choice;
+    do {
+        cout << "\nAdmin Panel\n1. Register Admin\n2. Login Admin\n3. Back\nEnter choice: ";
+        cin >> choice;
 
-            do {
-                cout << "Enter new author (leave empty to keep current): ";
-                getline(cin, newAuthor);
-                if (!newAuthor.empty() && !isValidName(newAuthor)) {
-                    cout << "Invalid name. Please enter a valid author name.\n";
-                }
-            } while (!newAuthor.empty() && !isValidName(newAuthor));
+        if (choice == 1) registerUser("Admin");
+        else if (choice == 2) {
+            if (login(loggedInAdmin, "Admin")) {
+                int adminChoice;
+                do {
+                    cout << "\nAdmin Menu\n1. Add Book\n2. View Books\n3. Logout\nEnter choice: ";
+                    cin >> adminChoice;
 
-            size_t firstComma = line.find(',');
-            size_t secondComma = line.find(',', firstComma + 1);
-
-            if (newID != id) {
-                line.replace(0, firstComma, to_string(newID));
-            }
-            if (!newTitle.empty()) {
-                line.replace(firstComma + 1, secondComma - firstComma - 1, newTitle);
-            }
-            if (!newAuthor.empty()) {
-                line.replace(secondComma + 1, line.length() - secondComma - 1, newAuthor);
+                    if (adminChoice == 1) addBook();
+                    else if (adminChoice == 2) viewBooks();
+                } while (adminChoice != 3);
+                loggedInAdmin = nullptr;
             }
         }
-        tempFile << line << endl;
-    }
-
-    file.close();
-    tempFile.close();
-
-    if (found) {
-        remove(FILE_NAME.c_str());
-        rename("temp.txt", FILE_NAME.c_str());
-        cout << "Book with ID " << idToUpdate << " updated successfully.\n";
-    } else {
-        cout << "No book found with ID " << idToUpdate << ".\n";
-    }
+    } while (choice != 3);
 }
 
 int main() {
-    initializeFile();
-
+    initializeFiles();
     int choice;
     do {
-        cout << "\nLibrary Management System\n";
-        cout << "1. Add Book\n";
-        cout << "2. Search Books\n";
-        cout << "3. Delete Book\n";
-        cout << "4. View Books\n";
-        cout << "5. Update Book\n";
-        cout << "6. Exit\n";
-        cout << "Enter your choice: ";
+        cout << "\nLibrary Management System\n1. Register\n2. Login\n3. Admin Panel\n4. View Books\n5. Exit\nEnter choice: ";
         cin >> choice;
-
-        switch (choice) {
-            case 1:
-                addBook();
-                break;
-            case 2:
-                searchBooks();
-                break;
-            case 3:
-                deleteBook();
-                break;
-            case 4:
-                viewBooks();
-                break;
-            case 5:
-                updateBook();
-                break;
-            case 6:
-                cout << "Thank you..........\n";
-                break;
-            default:
-                cout << "Invalid choice. Please try again.\n";
-        }
-    } while (choice != 6);
-
+        if (choice == 1) registerUser("Member");
+        else if (choice == 2 && login(loggedInUser, "Member")) {
+            int userChoice;
+            do {
+                cout << "\nUser Menu\n1. Borrow Book\n2. Return Book\n3. View Books\n4. Logout\nEnter choice: ";
+                cin >> userChoice;
+                if (userChoice == 1) borrowBook();
+                else if (userChoice == 2) returnBook();
+                else if (userChoice == 3) viewBooks();
+            } while (userChoice != 4);
+            loggedInUser = nullptr;
+        } else if (choice == 3) adminPanel();
+        else if (choice == 4) viewBooks();
+    } while (choice != 5);
     return 0;
 }
